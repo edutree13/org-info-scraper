@@ -31,6 +31,8 @@ jobs:
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
+          git pull --rebase  # 서버의 최신 변경사항을 먼저 가져옵니다
           git add output.csv
           git commit -m "Update search results" || echo "No changes to commit"
-          git push
+          git push origin main
+
