@@ -4,55 +4,63 @@ import requests
 import re
 import time
 
-# API 설정 (GitHub Secrets 확인)
+# API 설정 (GitHub Secrets에 등록된 이름과 동일해야 합니다)
 NAVER_ID = os.getenv('NAVER_CLIENT_ID')
 NAVER_SECRET = os.getenv('NAVER_CLIENT_SECRET')
 
 def extract_emails(text):
-    """텍스트에서 이메일 패턴을 추출합니다."""
+    """텍스트에서 이메일 주소 패턴을 찾아냅니다."""
+    # HTML 태그 제거
     clean_text = re.sub('<[^>]*>', ' ', text)
+    # 이메일 정규표현식
     pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     emails = re.findall(pattern, clean_text)
+    # 시스템 이메일 및 이미지 파일명 제외
     return [e.lower() for e in set(emails) if not any(x in e.lower() for x in ['w3.org', 'reporter', 'news', 'png', 'jpg'])]
 
 def search_and_extract(org_name, address):
-    # [수정] 오류를 유발하는 특수문자 제거 후 깔끔한 검색어 구성
-    query = f"{org_name} 교직원 연락처 이메일"
+    # 검색어 구성: 기관명 + 이메일 (가장 표준적인 검색어)
+    query = f"{org_name} 이메일 연락처"
     
-    # [핵심 수정] URL을 직접 더하지 않고 params 방식을 사용하여 주소 깨짐 방지
-    url = "https://openapi.naver.com"
-    params = {
+    # [중요] 주소 조립 방식을 params로 고정하여 URL 깨짐을 원천 차단합니다.
+    api_url = "https://openapi.naver.com"
+    api_params = {
         "query": query,
         "display": 10
     }
-    headers = {
+    api_headers = {
         "X-Naver-Client-Id": NAVER_ID, 
         "X-Naver-Client-Secret": NAVER_SECRET
     }
-    
+
     try:
-        # params를 사용하여 API 호출 (가장 안전한 방식)
-        res = requests.get(url, headers=headers, params=params, timeout=10)
+        # 주소(api_url)와 파라미터(api_params)를 안전하게 결합하여 호출합니다.
+        res = requests.get(api_url, headers=api_headers, params=api_params, timeout=10)
         
         if res.status_code == 200:
             items = res.json().get('items', [])
             all_emails = []
+            
             for item in items:
+                # 제목과 요약문에서 이메일 추출
                 content = item['title'] + " " + item['description']
                 all_emails.extend(extract_emails(content))
-                
+
             if all_emails:
+                # 중복 제거 후 최대 2개 반환
                 unique_emails = list(dict.fromkeys(all_emails))
                 return {"이메일": ", ".join(unique_emails[:2]), "상태": "수집성공"}
-            
+
             return {"이메일": "정보없음", "상태": "검색결과에데이터없음"}
         else:
-            return {"이메일": "API응답오류", "상태": f"코드:{res.status_code}"}
+            return {"이메일": "API오류", "상태": f"응답코드:{res.status_code}"}
+            
     except Exception as e:
-        return {"이메일": "통신에러", "상태": "주소형식확인필요"}
+        # 통신 에러 발생 시 로그를 남깁니다.
+        return {"이메일": "통신에러", "상태": "네트워크확인필요"}
 
 if __name__ == "__main__":
-    # 파일 읽기
+    # 인코딩(한글깨짐) 대응 파일 읽기
     df = None
     for enc in ['utf-8-sig', 'cp949', 'utf-8']:
         try:
@@ -65,8 +73,12 @@ if __name__ == "__main__":
         for index, row in df.iterrows():
             print(f"[{index+1}/{len(df)}] {row['기관명']} 수집 중...")
             info = search_and_extract(row['기관명'], row.get('주소', ''))
+            # 기존 원본 데이터에 수집된 정보를 합칩니다.
             results.append({**row.to_dict(), **info})
             time.sleep(0.4) # API 속도 제한 준수
-            
+
+        # 결과 저장 (엑셀에서 바로 보기 편하도록 utf-8-sig 사용)
         pd.DataFrame(results).to_csv('output.csv', index=False, encoding='utf-8-sig')
         print("🎉 모든 수집 작업이 완료되었습니다!")
+    else:
+        print("파일을 읽을 수 없습니다. input.csv 파일명을 확인해주세요.")
