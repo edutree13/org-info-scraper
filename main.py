@@ -4,49 +4,52 @@ import requests
 import re
 import time
 
-# API 설정
+# API 설정 (GitHub Secrets 확인)
 NAVER_ID = os.getenv('NAVER_CLIENT_ID')
 NAVER_SECRET = os.getenv('NAVER_CLIENT_SECRET')
 
 def extract_emails(text):
-    """텍스트에서 이메일 패턴을 찾아냅니다."""
-    # HTML 태그 제거 및 텍스트 정제
+    """텍스트에서 이메일 패턴을 추출합니다."""
     clean_text = re.sub('<[^>]*>', ' ', text)
     pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     emails = re.findall(pattern, clean_text)
-    # 시스템 이메일 및 무의미한 도메인 제외
-    return [e for e in set(emails) if not any(x in e for x in ['w3.org', 'reporter', 'news', 'example'])]
+    return [e.lower() for e in set(emails) if not any(x in e.lower() for x in ['w3.org', 'reporter', 'news', 'png', 'jpg'])]
 
 def search_and_extract(org_name, address):
-    # 검색어 고도화: 학교의 경우 "교직원" 키워드가 효과적입니다.
-    query = f"{org_name} 교직원 연락처 \"@\""
+    # [수정] 오류를 유발하는 특수문자 제거 후 깔끔한 검색어 구성
+    query = f"{org_name} 교직원 연락처 이메일"
     
-    # [수정된 부분] 네이버 API 전체 주소 연결
-    url = f"https://openapi.naver.com{query}&display=10"
+    # [핵심 수정] URL을 직접 더하지 않고 params 방식을 사용하여 주소 깨짐 방지
+    url = "https://openapi.naver.com"
+    params = {
+        "query": query,
+        "display": 10
+    }
     headers = {
         "X-Naver-Client-Id": NAVER_ID, 
         "X-Naver-Client-Secret": NAVER_SECRET
     }
     
     try:
-        res = requests.get(url, headers=headers, timeout=10)
+        # params를 사용하여 API 호출 (가장 안전한 방식)
+        res = requests.get(url, headers=headers, params=params, timeout=10)
+        
         if res.status_code == 200:
             items = res.json().get('items', [])
             all_emails = []
-            
             for item in items:
-                # 제목과 요약문에서 이메일 추출
-                snippet = item['title'] + " " + item['description']
-                found = extract_emails(snippet)
-                all_emails.extend(found)
+                content = item['title'] + " " + item['description']
+                all_emails.extend(extract_emails(content))
                 
             if all_emails:
-                # 중복 제거 후 최대 2개 반환
-                return {"이메일": ", ".join(list(set(all_emails))[:2]), "상태": "수집성공"}
+                unique_emails = list(dict.fromkeys(all_emails))
+                return {"이메일": ", ".join(unique_emails[:2]), "상태": "수집성공"}
             
-        return {"이메일": "정보없음", "상태": f"결과없음(코드:{res.status_code})"}
+            return {"이메일": "정보없음", "상태": "검색결과에데이터없음"}
+        else:
+            return {"이메일": "API응답오류", "상태": f"코드:{res.status_code}"}
     except Exception as e:
-        return {"이메일": "통신오류", "상태": f"에러:{str(e)}"}
+        return {"이메일": "통신에러", "상태": "주소형식확인필요"}
 
 if __name__ == "__main__":
     # 파일 읽기
@@ -63,7 +66,7 @@ if __name__ == "__main__":
             print(f"[{index+1}/{len(df)}] {row['기관명']} 수집 중...")
             info = search_and_extract(row['기관명'], row.get('주소', ''))
             results.append({**row.to_dict(), **info})
-            time.sleep(0.4) # API 차단 방지
+            time.sleep(0.4) # API 속도 제한 준수
             
         pd.DataFrame(results).to_csv('output.csv', index=False, encoding='utf-8-sig')
-        print("모든 작업 완료!")
+        print("🎉 모든 수집 작업이 완료되었습니다!")
