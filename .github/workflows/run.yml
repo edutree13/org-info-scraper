@@ -2,27 +2,31 @@ name: Auto Scraper
 
 on:
   push:
-    paths:
-      - 'input.csv'  # input.csv가 업데이트될 때만 실행
+    branches: [ "main" ]
+  workflow_dispatch:      # 수동 실행 버튼 생성
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    # 경고에서 요구한 Node.js 24 강제 설정 추가
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4  # v3에서 v4로 업데이트 (Node.js 24 대응)
+
+      - name: Setup Python
+        uses: actions/setup-python@v5  # v4에서 v5로 업데이트 (Node.js 24 대응)
         with:
-          python-version: '3.9'
+          python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install pandas requests beautifulsoup4 openpyxl
 
       - name: Run Scraper
         env:
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
         run: python main.py
@@ -32,15 +36,10 @@ jobs:
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
           
-          # 1. 먼저 바뀐 파일(output.csv)을 등록합니다
+          # 변경사항 확인 및 저장
           git add output.csv
-          
-          # 2. 변경사항이 있을 때만 커밋을 진행합니다
           git commit -m "Update search results" || echo "No changes to commit"
           
-          # 3. 서버의 최신 내용을 가져와서 합칩니다 (강제성 부여)
+          # 충돌 방지를 위해 서버 내용을 먼저 가져온 후 올리기
           git pull --rebase origin main
-          
-          # 4. 최종적으로 서버에 올립니다
           git push origin main
-
