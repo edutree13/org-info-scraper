@@ -1,0 +1,36 @@
+name: Auto Scraper
+
+on:
+  push:
+    paths:
+      - 'input.csv'  # input.csv가 업데이트될 때만 실행
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Scraper
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+        run: python main.py
+
+      - name: Commit and Push results
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add output.csv
+          git commit -m "Update search results" || echo "No changes to commit"
+          git push
